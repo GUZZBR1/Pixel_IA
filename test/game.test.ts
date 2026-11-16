@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { config } from '../src/config.js';
 import { Game } from '../src/game.js';
@@ -65,6 +68,73 @@ describe('Game', () => {
     game.sendMessage(agent, 'agora vai');
     expect(game.recentChat().map((m) => m.text)).toEqual(['oi', 'agora vai']);
   });
+
+  it('recentChat com afterSeq faz catch-up sem pular mensagens', () => {
+    const { game, reg, advance } = setup();
+    const { agent } = reg('ed');
+    for (let i = 0; i < 5; i++) { game.sendMessage(agent, `m${i}`); advance(1001); }
+    const all = game.recentChat(10);
+    // limit=2 após a 2ª mensagem deve trazer as 2 mais antigas seguintes (não as mais novas)
+    expect(game.recentChat(2, all[1]!.seq).map((m) => m.text)).toEqual(['m2', 'm3']);
+  });
+});
+
+describe('persistência', () => {
+  const fileDb = () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pixel-ia-'));
+    return { dir, db: join(dir, 't.db'), cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+  };
+
+  it('canvas é reconstruído do event log ao reabrir', () => {
+    const { dir, db, cleanup } = fileDb();
+    const g1 = new Game({ ...cfg, dbPath: db, cooldownMinMs: 0, cooldownMaxMs: 0 }, () => 1_000_000);
+    const a = g1.register('fi', ''); if (!a.ok) throw new Error();
+    g1.placePixel(a.agent, 3, 4, 9);
+    g1.placePixel(a.agent, 3, 4, 2); // sobrescreve: replay deve ficar com o último
+    g1.close();
+    const g2 = new Game({ ...cfg, dbPath: db }, () => 1_000_000);
+    expect(g2.canvas[4 * 100 + 3]).toBe(2);
+    g2.close();
+    cleanup();
+  });
+
+  it('rate limit do chat vem do banco e sobrevive a reabertura', () => {
+    const { dir, db, cleanup } = fileDb();
+    const g1 = new Game({ ...cfg, dbPath: db }, () => 1_000_000);
+    const a = g1.register('gi', ''); if (!a.ok) throw new Error();
+    g1.sendMessage(a.agent, 'oi');
+    g1.close();
+    const g2 = new Game({ ...cfg, dbPath: db }, () => 1_000_500);
+    expect(g2.sendMessage(a.agent, 'spam')).toMatchObject({ ok: false, code: 'RATE_LIMIT' });
+    g2.close();
+    cleanup();
+  });
+});
+
+describe('rastreio de pixels e perfil', () => {
+  it('guarda quem e quando; histórico mostra sobrescritas', () => {
+    const { game, reg, advance } = setup();
+    const a = reg('ana').agent, b = reg('beto').agent;
+    game.placePixel(a, 7, 8, 1);
+    advance(20_000);
+    game.placePixel(b, 7, 8, 2);
+    const h = game.pixelHistory(7, 8);
+    expect(h.map((e) => e.agent)).toEqual(['beto', 'ana']);
+    expect(h[0]!.ts).toBeGreaterThan(h[1]!.ts);
+    expect(game.pixelHistory(0, 0)).toEqual([]);
+  });
+
+  it('perfil traz contadores e atividade', () => {
+    const { game, reg, advance } = setup();
+    const a = reg('cris').agent;
+    game.placePixel(a, 1, 1, 3);
+    advance(20_000);
+    game.sendMessage(a, 'oi');
+    const p = game.agentProfile('cris')!;
+    expect(p).toMatchObject({ name: 'cris', pixels: 1, messages: 1 });
+    expect(p.recentPixels).toHaveLength(1);
+    expect(game.agentProfile('ninguem')).toBeNull();
+  });
 });
 
 describe('HTTP', () => {
@@ -86,7 +156,17 @@ describe('HTTP', () => {
     await app.inject({ method: 'POST', url: '/api/v1/chat', headers: h, payload: { text: 'olá' } });
     expect((await app.inject({ method: 'GET', url: '/api/v1/chat' })).json().messages[0].text).toBe('olá');
     expect((await app.inject({ method: 'GET', url: '/api/v1/canvas?x=50&y=50&w=1&h=1' })).json().rows).toEqual(['3']);
+    expect((await app.inject({ method: 'GET', url: '/api/v1/canvas?x=100&y=0&w=10&h=10' })).statusCode).toBe(400);
+    const bin = await app.inject({ method: 'GET', url: '/api/v1/canvas.bin' });
+    expect(bin.headers['x-canvas-width']).toBe('100');
+    expect(bin.rawPayload).toHaveLength(10_000);
+    const at = (await app.inject({ method: 'GET', url: '/api/v1/pixels/at?x=50&y=50' })).json();
+    expect(at.current.agent).toBe('eve');
+    expect((await app.inject({ method: 'GET', url: '/api/v1/pixels/at?x=500&y=1' })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'GET', url: '/api/v1/agents/eve' })).json().agent.pixels).toBe(1);
+    expect((await app.inject({ method: 'GET', url: '/api/v1/agents/zzz' })).statusCode).toBe(404);
     expect((await app.inject({ method: 'GET', url: '/skill.md' })).body).toContain('/api/v1');
+    await app.close();
   });
 });
 

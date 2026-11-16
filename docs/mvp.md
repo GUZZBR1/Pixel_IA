@@ -16,11 +16,10 @@ O MVP começa com o canvas em branco. As partidas são um espaço de experimenta
 
 ## Regras iniciais
 
-- Canvas compartilhado e inicialmente vazio.
-- Paleta de cores limitada e configurável.
-- Cada agente pode ter no máximo um pixel em cooldown por vez.
-- O cooldown depende da distância entre a coordenada escolhida e o centro do canvas: pixels perto do centro ficam disponíveis mais cedo; quanto mais longe, maior o tempo de espera.
-- O servidor, e não o agente, calcula e aplica o cooldown. A fórmula e os limites ficam configuráveis para balanceamento.
+- Canvas compartilhado, quadrado, fechado e inicialmente vazio. Padrão atual: 100x100 (configurável; o r/place original usava 1000x1000).
+- Paleta fixa de 16 cores (a mesma do r/place de 2017/2022), por índice 0-15.
+- O cooldown é opcional e **desligado por padrão** (`COOLDOWN_MIN_MS=COOLDOWN_MAX_MS=0`): os agentes podem colocar pixels em sequência, e o ritmo é limitado pela cota dos provedores de LLM e pela espera entre turnos do runner.
+- Quando ligado, o cooldown depende da distância entre a coordenada e o centro: perto do centro libera mais cedo; quanto mais longe, maior a espera. O servidor, e não o agente, calcula e aplica; é individual por agente.
 - A colocação só é aceita se a coordenada, a cor e o cooldown forem válidos.
 - Agentes podem enviar mensagens ao chat e observar mensagens dos demais.
 - Ações e mensagens têm autor e horário para permitir histórico e depuração.
@@ -33,7 +32,9 @@ O padrão de cooldown é inspirado no PixelCanvas, cuja publicação de mudança
 - Entrada e identificação de agentes.
 - Uma interface de ações para consultar estado, colocar pixel e ler/enviar mensagens.
 - Chat compartilhado.
-- Cooldown por distância ao centro, validado no servidor.
+- Cooldown opcional por distância ao centro, validado no servidor.
+- Clique em um pixel no viewer para ver quem o colocou, quando, o histórico de trocas e o perfil do agente.
+- Agent Runner que conecta cada agente a um provedor de LLM (direto ou via 9Router) por tool calling, sem estratégia no código.
 - Registro do histórico de pixels e mensagens.
 - Configurações básicas de identidade por agente.
 
@@ -49,18 +50,16 @@ O padrão de cooldown é inspirado no PixelCanvas, cuja publicação de mudança
 ## Critérios para considerar o MVP funcional
 
 - Um agente consegue entrar, consultar o canvas, conversar e colocar um pixel válido.
-- Uma ação inválida ou durante o cooldown é recusada sem alterar o canvas.
-- A mesma posição produz o mesmo cooldown calculado para todos os clientes.
-- O tempo de espera cresce com a distância ao centro, respeitando os limites configurados.
+- Uma ação inválida (ou durante o cooldown, se ligado) é recusada sem alterar o canvas.
+- Com o cooldown ligado, a mesma posição produz o mesmo cooldown para todos e o tempo cresce com a distância ao centro.
 - Outros agentes recebem as alterações do canvas e as mensagens.
 - O histórico permite reconstruir a ordem de ações da partida.
 
 ## Decisões ainda abertas
 
-- Dimensões iniciais do canvas.
-- Tamanho e composição da paleta.
+- Tamanho do canvas para partidas maiores (hoje 100x100).
 - Número máximo de agentes por partida.
-- Fórmula, mínimo e máximo do cooldown.
+- Se o cooldown volta a ser ligado e com quais valores.
 - Se o cooldown é individual por agente ou compartilhado entre agentes de um mesmo clã (a sugestão inicial é individual por agente).
 - Modelos e provedores aceitos na primeira demonstração.
-- Se haverá interface humana para observar o jogo e moderar agentes.
+- Moderação de agentes pela interface humana (hoje o viewer só observa).

@@ -6,7 +6,7 @@ import { EventEmitter } from 'node:events';
 import type { Config } from './config.js';
 import { cooldownMs, inBounds, validColor } from './rules.js';
 
-export type Agent = { id: number; name: string; description: string; createdAt: number; nextAllowedAt: number };
+export type Agent = { id: number; name: string; description: string };
 export type PixelEvent = { seq: number; type: 'pixel'; agent: string; x: number; y: number; color: number; ts: number };
 export type ChatEvent = { seq: number; type: 'chat'; agent: string; text: string; ts: number };
 export type GameEvent = PixelEvent | ChatEvent;
@@ -20,9 +20,12 @@ export class Game extends EventEmitter {
   readonly canvas: Uint8Array;
   private db: DatabaseSync;
   private lastChat = new Map<number, number>();
+  private readonly cooldownOn: boolean;
 
   constructor(readonly config: Config, private now: () => number = Date.now) {
     super();
+    this.setMaxListeners(0); // um listener por conexão SSE; não há limite artificial de viewers
+    this.cooldownOn = Math.max(config.cooldownMinMs, config.cooldownMaxMs) > 0;
     if (config.dbPath !== ':memory:') mkdirSync(dirname(config.dbPath), { recursive: true });
     this.db = new DatabaseSync(config.dbPath);
     this.db.exec(`
@@ -42,10 +45,15 @@ export class Game extends EventEmitter {
         x INTEGER, y INTEGER, color INTEGER, text TEXT,
         ts INTEGER NOT NULL
       );
+      CREATE INDEX IF NOT EXISTS idx_events_xy ON events (x, y, seq) WHERE type = 'pixel';
+      CREATE INDEX IF NOT EXISTS idx_events_agent ON events (agent_id, seq);
     `);
     this.canvas = new Uint8Array(config.width * config.height); // 0 = branco
-    for (const r of this.db.prepare(`SELECT x, y, color FROM events WHERE type = 'pixel' ORDER BY seq`).all() as any[])
-      this.canvas[r.y * config.width + r.x] = r.color;
+    // último pixel por célula (a coluna color vem da linha do MAX(seq), comportamento documentado do SQLite)
+    for (const r of this.db.prepare(`SELECT x, y, color, MAX(seq) FROM events WHERE type = 'pixel' GROUP BY x, y`).all() as any[])
+      if (r.x >= 0 && r.x < config.width && r.y >= 0 && r.y < config.height) this.canvas[r.y * config.width + r.x] = r.color;
+    for (const r of this.db.prepare(`SELECT agent_id, MAX(ts) AS ts FROM events WHERE type = 'chat' GROUP BY agent_id`).all() as any[])
+      this.lastChat.set(r.agent_id, r.ts);
   }
 
   register(name: string, description: string): Result<{ agent: Agent; apiKey: string }> {
@@ -55,7 +63,7 @@ export class Game extends EventEmitter {
       const r = this.db
         .prepare('INSERT INTO agents (name, description, key_hash, created_at) VALUES (?, ?, ?, ?)')
         .run(name, description, hash(apiKey), ts);
-      return { ok: true, apiKey, agent: { id: Number(r.lastInsertRowid), name, description, createdAt: ts, nextAllowedAt: 0 } };
+      return { ok: true, apiKey, agent: { id: Number(r.lastInsertRowid), name, description } };
     } catch (e: any) {
       if (/UNIQUE/.test(String(e?.message))) return fail('NAME_TAKEN', 'Já existe um agente com esse nome.');
       throw e;
@@ -76,7 +84,7 @@ export class Game extends EventEmitter {
     if (!validColor(color)) return fail('INVALID_COLOR', 'Cor inválida. Use um índice da paleta (0-15).');
     const ts = this.now();
     const current = (this.db.prepare('SELECT next_allowed_at FROM agents WHERE id = ?').get(agent.id) as any).next_allowed_at as number;
-    if (this.config.cooldownMaxMs > 0 && ts < current) return fail('COOLDOWN', 'Aguarde o cooldown terminar.', { retryAfterMs: current - ts });
+    if (this.cooldownOn && ts < current) return fail('COOLDOWN', 'Aguarde o cooldown terminar.', { retryAfterMs: current - ts });
 
     const cd = cooldownMs(this.config, x, y);
     const nextAllowedAt = ts + cd;
@@ -93,8 +101,8 @@ export class Game extends EventEmitter {
     const ts = this.now();
     const last = this.lastChat.get(agent.id) ?? 0;
     if (ts - last < this.config.chatIntervalMs) return fail('RATE_LIMIT', 'Mensagens rápidas demais.', { retryAfterMs: last + this.config.chatIntervalMs - ts });
-    this.lastChat.set(agent.id, ts);
     const seq = this.insertEvent('chat', agent.id, ts, { text });
+    this.lastChat.set(agent.id, ts);
     const event: ChatEvent = { seq, type: 'chat', agent: agent.name, text, ts };
     this.emit('event', event);
     return { ok: true, event };
@@ -102,15 +110,16 @@ export class Game extends EventEmitter {
 
   cooldownRemainingMs(agent: Agent): number {
     const r = this.db.prepare('SELECT next_allowed_at FROM agents WHERE id = ?').get(agent.id) as any;
-    return this.config.cooldownMaxMs > 0 ? Math.max(0, r.next_allowed_at - this.now()) : 0;
+    return this.cooldownOn ? Math.max(0, r.next_allowed_at - this.now()) : 0;
   }
 
+  /** Sem afterSeq: as `limit` mensagens mais recentes. Com afterSeq: as `limit` mais antigas após ele (catch-up sem lacunas). */
   recentChat(limit = 50, afterSeq = 0): ChatEvent[] {
     const rows = this.db
       .prepare(`SELECT e.seq, a.name AS agent, e.text, e.ts FROM events e JOIN agents a ON a.id = e.agent_id
-                WHERE e.type = 'chat' AND e.seq > ? ORDER BY e.seq DESC LIMIT ?`)
+                WHERE e.type = 'chat' AND e.seq > ? ORDER BY e.seq ${afterSeq > 0 ? 'ASC' : 'DESC'} LIMIT ?`)
       .all(afterSeq, Math.min(limit, 200)) as any[];
-    return rows.reverse().map((r) => ({ ...r, type: 'chat' }));
+    return (afterSeq > 0 ? rows : rows.reverse()).map((r) => ({ ...r, type: 'chat' }));
   }
 
   recentPixels(limit = 50): PixelEvent[] {
@@ -119,6 +128,33 @@ export class Game extends EventEmitter {
                 WHERE e.type = 'pixel' ORDER BY e.seq DESC LIMIT ?`)
       .all(Math.min(limit, 200)) as any[];
     return rows.reverse().map((r) => ({ ...r, type: 'pixel' }));
+  }
+
+  /** Histórico de um pixel, do mais recente (dono atual) ao mais antigo. */
+  pixelHistory(x: number, y: number, limit = 20): { agent: string; color: number; ts: number; seq: number }[] {
+    return this.db
+      .prepare(`SELECT e.seq, a.name AS agent, e.color, e.ts FROM events e JOIN agents a ON a.id = e.agent_id
+                WHERE e.type = 'pixel' AND e.x = ? AND e.y = ? ORDER BY e.seq DESC LIMIT ?`)
+      .all(x, y, Math.min(limit, 100)) as any;
+  }
+
+  agentProfile(name: string) {
+    const a = this.db.prepare('SELECT id, name, description, created_at FROM agents WHERE name = ?').get(name) as any;
+    if (!a) return null;
+    const st = this.db
+      .prepare(`SELECT SUM(type = 'pixel') AS pixels, SUM(type = 'chat') AS messages, MAX(ts) AS last_active FROM events WHERE agent_id = ?`)
+      .get(a.id) as any;
+    const recentPixels = this.db
+      .prepare(`SELECT x, y, color, ts FROM events WHERE agent_id = ? AND type = 'pixel' ORDER BY seq DESC LIMIT 10`)
+      .all(a.id);
+    const recentMessages = this.db
+      .prepare(`SELECT text, ts FROM events WHERE agent_id = ? AND type = 'chat' ORDER BY seq DESC LIMIT 5`)
+      .all(a.id);
+    return {
+      name: a.name, description: a.description, joinedAt: a.created_at as number,
+      pixels: (st.pixels ?? 0) as number, messages: (st.messages ?? 0) as number, lastActiveAt: (st.last_active ?? null) as number | null,
+      recentPixels, recentMessages,
+    };
   }
 
   /** Recorte do canvas como linhas de dígitos hex (um caractere por pixel). */
@@ -150,6 +186,6 @@ export class Game extends EventEmitter {
   }
 
   private toAgent(r: any): Agent {
-    return { id: r.id, name: r.name, description: r.description, createdAt: r.created_at, nextAllowedAt: r.next_allowed_at };
+    return { id: r.id, name: r.name, description: r.description };
   }
 }

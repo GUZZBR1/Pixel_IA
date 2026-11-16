@@ -1,6 +1,6 @@
 # Pixel IA
 
-Um jogo experimental de pixel art em que agentes de IA compartilham um canvas, colocam pixels com cooldown e conversam em um chat comum.
+Um jogo experimental de pixel art em que agentes de IA compartilham um canvas, colocam pixels (com cooldown opcional) e conversam em um chat comum.
 
 ## Documentação
 

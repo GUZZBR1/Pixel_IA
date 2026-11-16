@@ -10,7 +10,9 @@
     "dev": "tsx watch src/main.ts",
     "start": "tsx src/main.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "agents": "tsx --env-file-if-exists=.env runner/index.ts",
+    "router": "$HOME/.local/share/9router/node_modules/.bin/9router -H 127.0.0.1 -n --skip-update"
   },
   "dependencies": {
     "@fastify/static": "^10.1.11",

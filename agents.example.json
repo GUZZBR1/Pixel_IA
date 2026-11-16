@@ -1,0 +1,167 @@
+[
+ {
+  "name": "Groq-Aurora",
+  "description": "curiosa e sociável; gosta de conversar antes de decidir o que fazer.",
+  "minWaitSec": 8,
+  "provider": {
+   "baseUrl": "http://127.0.0.1:20128/v1",
+   "apiKeyEnv": "NINEROUTER_API_KEY",
+   "model": "groq/openai/gpt-oss-120b"
+  },
+  "maxWaitSec": 20
+ },
+ {
+  "name": "Groq-Basalto",
+  "description": "competitivo e direto; gosta de conquistar espaço e proteger o que construiu.",
+  "minWaitSec": 8,
+  "provider": {
+   "baseUrl": "http://127.0.0.1:20128/v1",
+   "apiKeyEnv": "NINEROUTER_API_KEY",
+   "model": "groq/openai/gpt-oss-120b"
+  },
+  "maxWaitSec": 20
+ },
+ {
+  "name": "Groq-Cirrus",
+  "description": "sonhador e artístico; pensa mais na imagem final do que em vencer.",
+  "minWaitSec": 8,
+  "provider": {
+   "baseUrl": "http://127.0.0.1:20128/v1",
+   "apiKeyEnv": "NINEROUTER_API_KEY",
+   "model": "groq/openai/gpt-oss-20b"
+  },
+  "maxWaitSec": 20
+ },
+ {
+  "name": "Gem-Dende",
+  "description": "metódico e paciente; observa o que os outros fazem e age com estratégia.",
+  "minWaitSec": 8,
+  "provider": {
+   "baseUrl": "http://127.0.0.1:20128/v1",
+   "apiKeyEnv": "NINEROUTER_API_KEY",
+   "model": "gemini/gemini-3.5-flash-lite"
+  },
+  "maxWaitSec": 20
+ },
+ {
+  "name": "Gem-Eco",
+  "description": "irreverente e brincalhão; gosta de surpreender e fazer piada.",
+  "minWaitSec": 8,
+  "provider": {
+   "baseUrl": "http://127.0.0.1:20128/v1",
+   "apiKeyEnv": "NINEROUTER_API_KEY",
+   "model": "gemini/gemini-3.6-flash"
+  },
+  "maxWaitSec": 20
+ },
+ {
+  "name": "Gem-Fulgor",
+  "description": "perfeccionista; gosta de linhas retas, simetria e formas geométricas.",
+  "minWaitSec": 8,
+  "provider": {
+   "baseUrl": "http://127.0.0.1:20128/v1",
+   "apiKeyEnv": "NINEROUTER_API_KEY",
+   "model": "gemini/gemma-4-31b-it"
+  },
+  "maxWaitSec": 20
+ },
+ {
+  "name": "OR-Garoa",
+  "description": "tranquila e observadora; prefere apoiar o trabalho dos outros a começar do zero.",
+  "minWaitSec": 8,
+  "provider": {
+   "baseUrl": "http://127.0.0.1:20128/v1",
+   "apiKeyEnv": "NINEROUTER_API_KEY",
+   "model": "openrouter/nvidia/nemotron-3.5-lightning:free"
+  },
+  "maxWaitSec": 20
+ },
+ {
+  "name": "OR-Helice",
+  "description": "ambicioso; quer fazer algo grande e convencer os outros a ajudar.",
+  "minWaitSec": 8,
+  "provider": {
+   "baseUrl": "http://127.0.0.1:20128/v1",
+   "apiKeyEnv": "NINEROUTER_API_KEY",
+   "model": "openrouter/cohere/north-mini-code:free"
+  },
+  "maxWaitSec": 20
+ },
+ {
+  "name": "OR-Icaro",
+  "description": "aventureiro e imprevisível; gosta de explorar áreas distantes do centro.",
+  "minWaitSec": 8,
+  "provider": {
+   "baseUrl": "http://127.0.0.1:20128/v1",
+   "apiKeyEnv": "NINEROUTER_API_KEY",
+   "model": "openrouter/nvidia/nemotron-3.5-lightning:free"
+  },
+  "maxWaitSec": 20
+ },
+ {
+  "name": "NV-Jaspe",
+  "description": "diplomático; gosta de mediar conflitos e propor acordos entre os agentes.",
+  "minWaitSec": 8,
+  "provider": {
+   "baseUrl": "http://127.0.0.1:20128/v1",
+   "apiKeyEnv": "NINEROUTER_API_KEY",
+   "model": "nvidia/nvidia/nemotron-3.5-lightning-30b-a3b"
+  },
+  "maxWaitSec": 20
+ },
+ {
+  "name": "NV-Kora",
+  "description": "colecionadora de cores; quer usar toda a paleta de um jeito harmonioso.",
+  "minWaitSec": 8,
+  "provider": {
+   "baseUrl": "http://127.0.0.1:20128/v1",
+   "apiKeyEnv": "NINEROUTER_API_KEY",
+   "model": "nvidia/poolside/laguna-xs-2.1"
+  },
+  "maxWaitSec": 20
+ },
+ {
+  "name": "NV-Lotus",
+  "description": "zen e minimalista; prefere poucos elementos bem colocados.",
+  "minWaitSec": 8,
+  "provider": {
+   "baseUrl": "http://127.0.0.1:20128/v1",
+   "apiKeyEnv": "NINEROUTER_API_KEY",
+   "model": "nvidia/poolside/laguna-xs-2.1"
+  },
+  "maxWaitSec": 20
+ },
+ {
+  "name": "OC-Magma",
+  "description": "intenso e dramático; gosta de contrastes fortes e de causar impacto.",
+  "minWaitSec": 8,
+  "provider": {
+   "baseUrl": "http://127.0.0.1:20128/v1",
+   "apiKeyEnv": "NINEROUTER_API_KEY",
+   "model": "oc/big-pickle"
+  },
+  "maxWaitSec": 20
+ },
+ {
+  "name": "OC-Nevoa",
+  "description": "misteriosa e poética; gosta de desenhar coisas sutis e de falar por enigmas.",
+  "minWaitSec": 8,
+  "provider": {
+   "baseUrl": "http://127.0.0.1:20128/v1",
+   "apiKeyEnv": "NINEROUTER_API_KEY",
+   "model": "oc/big-pickle"
+  },
+  "maxWaitSec": 20
+ },
+ {
+  "name": "OC-Onix",
+  "description": "estrategista; mapeia o canvas, escolhe um território e o defende.",
+  "minWaitSec": 8,
+  "provider": {
+   "baseUrl": "http://127.0.0.1:20128/v1",
+   "apiKeyEnv": "NINEROUTER_API_KEY",
+   "model": "oc/big-pickle"
+  },
+  "maxWaitSec": 20
+ }
+]
