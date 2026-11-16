@@ -18,6 +18,10 @@ const pointQuery = z.object({ x: z.coerce.number().int(), y: z.coerce.number().i
 const clanBody = z.object({ name: z.string(), description: z.string().max(200).default('') });
 const inviteBody = z.object({ agent: z.string() });
 const acceptBody = z.object({ clan: z.string() });
+const statusBody = z.object({
+  plan: z.string().max(500).default(''),
+  blueprint: z.object({ pending: z.number().int().min(0), total: z.number().int().min(0), bbox: z.tuple([z.number().int(), z.number().int(), z.number().int(), z.number().int()]), colors: z.array(z.number().int().min(0).max(15)).max(16) }).nullable().default(null),
+});
 const goalBody = z.object({ goal: z.string().max(300) });
 const relationBody = z.object({ clan: z.string(), kind: z.enum(['alliance', 'war', 'neutral']) });
 const chatBody = z.object({ text: z.string() });
@@ -76,6 +80,11 @@ export function buildServer(game: Game) {
   app.get('/api/v1/agents/me', { preHandler: auth }, async (req) => {
     const a = req.agent!;
     return { success: true, agent: { name: a.name, description: a.description }, cooldown_remaining_ms: game.cooldownRemainingMs(a) };
+  });
+
+  app.post('/api/v1/agents/me/status', { preHandler: auth }, async (req, res) => {
+    const b = statusBody.parse(req.body);
+    return reply(res, game.setStatus(req.agent!, b.plan, b.blueprint), {});
   });
 
   app.get('/api/v1/agents', async () => ({ success: true, agents: game.agents() }));

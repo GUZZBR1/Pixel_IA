@@ -12,6 +12,7 @@ export type PixelEvent = { seq: number; type: 'pixel'; agent: string; x: number;
 export type ChatEvent = { seq: number; type: 'chat'; agent: string; text: string; ts: number };
 export type GameEvent = PixelEvent | ChatEvent;
 
+export type Blueprint = { pending: number; total: number; bbox: [number, number, number, number]; colors: number[] };
 export type Result<T> = ({ ok: true } & T) | { ok: false; code: string; message: string; retryAfterMs?: number };
 
 const hash = (key: string) => createHash('sha256').update(key).digest('hex');
@@ -49,6 +50,12 @@ export class Game extends EventEmitter {
         ts INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_events_xy ON events (x, y, seq) WHERE type = 'pixel';
+      CREATE TABLE IF NOT EXISTS agent_status (
+        agent_id INTEGER PRIMARY KEY REFERENCES agents(id),
+        plan TEXT NOT NULL DEFAULT '',
+        blueprint TEXT,
+        ts INTEGER NOT NULL
+      );
       CREATE INDEX IF NOT EXISTS idx_events_agent ON events (agent_id, seq);
     `);
     this.clans = new Clans(this.db, now);
@@ -82,8 +89,16 @@ export class Game extends EventEmitter {
     return r ? this.toAgent(r) : null;
   }
 
-  agents(): Pick<Agent, 'name' | 'description'>[] {
-    return this.db.prepare('SELECT name, description FROM agents ORDER BY id').all() as any;
+  agents(): { name: string; description: string; plan: string; blueprint: Blueprint | null }[] {
+    return (this.db.prepare('SELECT a.name, a.description, s.plan, s.blueprint FROM agents a LEFT JOIN agent_status s ON s.agent_id = a.id ORDER BY a.id').all() as any[])
+      .map((r) => ({ name: r.name, description: r.description, plan: r.plan ?? '', blueprint: r.blueprint ? JSON.parse(r.blueprint) : null }));
+  }
+
+  /** Plano e desenho em andamento, públicos para todos os agentes (conteúdo do próprio agente, não confiável). */
+  setStatus(agent: Agent, plan: string, blueprint: Blueprint | null): Result<{}> {
+    const bp = blueprint && blueprint.pending > 0 ? blueprint : null;
+    this.db.prepare('INSERT OR REPLACE INTO agent_status (agent_id, plan, blueprint, ts) VALUES (?, ?, ?, ?)').run(agent.id, plan.slice(0, 500), bp && JSON.stringify(bp), this.now());
+    return { ok: true };
   }
 
   placePixel(agent: Agent, x: number, y: number, color: number): Result<{ cooldownMs: number; nextAllowedAt: number; event: PixelEvent }> {
@@ -149,6 +164,7 @@ export class Game extends EventEmitter {
   agentProfile(name: string) {
     const a = this.db.prepare('SELECT id, name, description, created_at FROM agents WHERE name = ?').get(name) as any;
     if (!a) return null;
+    const pub = this.agents().find((x) => x.name === a.name)!;
     const st = this.db
       .prepare(`SELECT SUM(type = 'pixel') AS pixels, SUM(type = 'chat') AS messages, MAX(ts) AS last_active FROM events WHERE agent_id = ?`)
       .get(a.id) as any;
@@ -161,7 +177,7 @@ export class Game extends EventEmitter {
     return {
       name: a.name, description: a.description, joinedAt: a.created_at as number,
       pixels: (st.pixels ?? 0) as number, messages: (st.messages ?? 0) as number, lastActiveAt: (st.last_active ?? null) as number | null,
-      recentPixels, recentMessages, clan: this.clans.clanOf(a.name),
+      recentPixels, recentMessages, clan: this.clans.clanOf(a.name), plan: pub.plan, blueprint: pub.blueprint,
     };
   }
 

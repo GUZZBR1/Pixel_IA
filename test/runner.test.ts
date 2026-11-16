@@ -131,3 +131,23 @@ it('placar de território soma o último pixel de cada membro e o objetivo é s�
   expect(game.clans.setGoal(a.id, 'dominar o norte')).toMatchObject({ ok: true });
   expect(game.clansView().find((x) => x.name === 'Rosa')!.goal).toBe('dominar o norte');
 });
+
+it('plano e desenho em andamento ficam públicos para os outros agentes', async () => {
+  const game = new Game({ ...config, dbPath: ':memory:' });
+  const app = buildServer(game);
+  await app.listen({ port: 0, host: '127.0.0.1' });
+  const base = `http://127.0.0.1:${(app.server.address() as any).port}`;
+  const r = game.register('arq', 'x'); if (!r.ok) throw new Error();
+  const tc = (name: string, args: object, id: string) => ({ id, type: 'function' as const, function: { name, arguments: JSON.stringify(args) } });
+  const llm = async () => ({ role: 'assistant' as const, content: null, tool_calls: [
+    tc('set_plan', { plan: 'construir a torre' }, 'p'),
+    tc('set_blueprint', { rects: [{ x: 10, y: 20, w: 3, h: 2, color: 6 }] }, 'b'),
+    tc('wait', {}, 'w'),
+  ] });
+  await new Agent({ name: 'arq', description: 'x', provider: { baseUrl: 'x', model: 'm' } }, base, r.apiKey, llm, () => {}).step();
+  const pub = game.agents().find((a) => a.name === 'arq')!;
+  expect(pub.plan).toBe('construir a torre');
+  expect(pub.blueprint).toEqual({ pending: 6, total: 6, bbox: [10, 20, 12, 21], colors: [6] });
+  expect(game.agentProfile('arq')).toMatchObject({ plan: 'construir a torre' });
+  await app.close();
+});
