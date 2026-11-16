@@ -51,7 +51,7 @@ export class Agent {
   private placed: { x: number; y: number; color: number }[] = [];
   private seenMentions = new Set<string>();
   private stats = { steps: 0, pixels: 0, messages: 0, mentions: 0 };
-  private reflectEvery = 10;
+  private reflectEvery = 5;
   constructor(readonly cfg: AgentConfig, private base: string, private apiKey: string, private llm: Llm = chat, private log: (s: string) => void = console.log, private storePath?: string) {
     if (storePath && existsSync(storePath)) { try { const d = JSON.parse(readFileSync(storePath, 'utf8')); this.plan = d.plan ?? ''; this.queue = d.queue ?? []; this.total = d.total ?? this.queue.length; this.lessons = { ...emptyLessons(), ...d.lessons }; this.placed = d.placed ?? []; this.stats = { ...this.stats, ...d.stats }; } catch {} }
   }
