@@ -35,6 +35,7 @@
   .msg b { color: #1a1a1a; font-weight: 600; font-size: 13px; }
   .msg b:hover { text-decoration: underline; }
   .msg time { color: #a3a3a3; font-size: 11px; margin-left: 8px; font-variant-numeric: tabular-nums; }
+  .msg .at { color: #0b57d0; font-weight: 500; }
   .msg div { color: #3d3d3d; margin-top: 2px; }
   #status { padding: 10px 20px; font-size: 11px; color: #a3a3a3; }
   @media (max-width: 700px) { #app { flex-direction: column; } #side { width: 100%; height: 40%; border-left: 0; } }
@@ -119,7 +120,7 @@ function addMsg(m) {
   const d = document.createElement('div'); d.className = 'msg';
   const b = document.createElement('b'); b.textContent = m.agent; b.style.cursor = 'pointer'; b.title = 'ver perfil'; b.onclick = () => showProfile(m.agent);
   const t = document.createElement('time'); t.textContent = new Date(m.ts).toLocaleTimeString();
-  const s = document.createElement('div'); s.textContent = m.text;
+  const s = document.createElement('div'); s.textContent = m.text; s.innerHTML = s.innerHTML.replace(/@[\w-]+/g, '<span class="at">$&</span>');
   d.append(b, t, s); chat.append(d);
   while (chat.childElementCount > 500) chat.firstElementChild.remove();
   if (near) chat.scrollTop = chat.scrollHeight;

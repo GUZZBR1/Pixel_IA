@@ -48,3 +48,20 @@ it('motor interno pinta o blueprint sozinho respeitando o cooldown', async () =>
   expect(game.canvas[3 * config.width + 3]).toBe(7);
   await app.close();
 });
+
+it('send_message com to endereça o agente e a menção aparece em messages_to_you', async () => {
+  const game = new Game({ ...config, dbPath: ':memory:', chatIntervalMs: 0 });
+  const app = buildServer(game);
+  await app.listen({ port: 0, host: '127.0.0.1' });
+  const base = `http://127.0.0.1:${(app.server.address() as any).port}`;
+  const a = game.register('ana', 'x'), b = game.register('beto', 'y'); if (!a.ok || !b.ok) throw new Error();
+  const say = async (_p: any, m: Msg[]) => m.some((x) => x.role === 'tool') ? { role: 'assistant' as const, content: null, tool_calls: [{ id: 'w', type: 'function' as const, function: { name: 'wait', arguments: '{}' } }] }
+    : { role: 'assistant' as const, content: null, tool_calls: [{ id: 's', type: 'function' as const, function: { name: 'send_message', arguments: JSON.stringify({ text: 'vamos fazer um jardim?', to: 'beto' }) } }] };
+  await new Agent({ name: 'ana', description: 'x', provider: { baseUrl: 'x', model: 'm' } }, base, a.apiKey, say as any, () => {}).step();
+  expect(game.recentChat()[0]?.text).toBe('@beto vamos fazer um jardim?');
+  let seen = '';
+  const spy = async (_p: any, m: Msg[]) => { seen = String(m[1]!.content); return { role: 'assistant' as const, content: null, tool_calls: [{ id: 'w', type: 'function' as const, function: { name: 'wait', arguments: '{}' } }] }; };
+  await new Agent({ name: 'beto', description: 'y', provider: { baseUrl: 'x', model: 'm' } }, base, b.apiKey, spy as any, () => {}).step();
+  expect(seen).toMatch(/messages_to_you_UNTRUSTED[^\]]*ana: @beto/);
+  await app.close();
+});
