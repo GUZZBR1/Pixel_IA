@@ -65,3 +65,26 @@ it('send_message com to endereça o agente e a menção aparece em messages_to_y
   expect(seen).toMatch(/messages_to_you_UNTRUSTED[^\]]*ana: @beto/);
   await app.close();
 });
+
+it('reflexão grava lições que voltam na observação e sobrevivem em disco', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs'); const { tmpdir } = await import('node:os'); const { join } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'pia-')); const file = join(dir, 's.json');
+  const game = new Game({ ...config, dbPath: ':memory:', chatIntervalMs: 0 });
+  const app = buildServer(game);
+  await app.listen({ port: 0, host: '127.0.0.1' });
+  const base = `http://127.0.0.1:${(app.server.address() as any).port}`;
+  const r = game.register('sage', 'x'); if (!r.ok) throw new Error();
+  const tc = (name: string, args: object) => ({ role: 'assistant' as const, content: null, tool_calls: [{ id: name, type: 'function' as const, function: { name, arguments: JSON.stringify(args) } }] });
+  let obs = '';
+  const llm = async (_p: any, m: Msg[], t: any[]) => {
+    if (t[0].function.name === 'update_lessons') return tc('update_lessons', { drawing: ['pinte formas simples'], communication: ['responda menções'], personality: ['calmo'] });
+    obs = String(m[1]!.content); return tc('wait', { seconds: 5 });
+  };
+  const mk = () => new Agent({ name: 'sage', description: 'x', provider: { baseUrl: 'x', model: 'm' } }, base, r.apiKey, llm as any, () => {}, file);
+  const a = mk(); (a as any).reflectEvery = 2;
+  await a.step(); await a.step(); await a.step();
+  expect(obs).toContain('pinte formas simples');
+  await mk().step();
+  expect(obs).toContain('responda menções');
+  rmSync(dir, { recursive: true }); await app.close();
+});
