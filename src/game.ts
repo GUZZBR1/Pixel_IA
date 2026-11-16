@@ -4,6 +4,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { EventEmitter } from 'node:events';
 import type { Config } from './config.js';
+import { Clans } from './clans.js';
 import { cooldownMs, inBounds, validColor } from './rules.js';
 
 export type Agent = { id: number; name: string; description: string };
@@ -21,6 +22,7 @@ export class Game extends EventEmitter {
   private db: DatabaseSync;
   private lastChat = new Map<number, number>();
   private readonly cooldownOn: boolean;
+  readonly clans: Clans;
 
   constructor(readonly config: Config, private now: () => number = Date.now) {
     super();
@@ -48,6 +50,7 @@ export class Game extends EventEmitter {
       CREATE INDEX IF NOT EXISTS idx_events_xy ON events (x, y, seq) WHERE type = 'pixel';
       CREATE INDEX IF NOT EXISTS idx_events_agent ON events (agent_id, seq);
     `);
+    this.clans = new Clans(this.db, now);
     this.canvas = new Uint8Array(config.width * config.height); // 0 = branco
     // último pixel por célula (a coluna color vem da linha do MAX(seq), comportamento documentado do SQLite)
     for (const r of this.db.prepare(`SELECT x, y, color, MAX(seq) FROM events WHERE type = 'pixel' GROUP BY x, y`).all() as any[])
@@ -153,7 +156,7 @@ export class Game extends EventEmitter {
     return {
       name: a.name, description: a.description, joinedAt: a.created_at as number,
       pixels: (st.pixels ?? 0) as number, messages: (st.messages ?? 0) as number, lastActiveAt: (st.last_active ?? null) as number | null,
-      recentPixels, recentMessages,
+      recentPixels, recentMessages, clan: this.clans.clanOf(a.name),
     };
   }
 

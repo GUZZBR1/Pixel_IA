@@ -11,12 +11,18 @@ const tools: Tool[] = [
   { type: 'function', function: { name: 'set_plan', description: 'Salva seu objetivo/plano atual (até 500 caracteres). Ele é reapresentado a você em todo turno; use para manter coerência e coordenar com outros.', parameters: { type: 'object', properties: { plan: { type: 'string' } }, required: ['plan'] } } },
   { type: 'function', function: { name: 'set_blueprint', description: 'Entrega ao motor interno um desenho para ele pintar sozinho, pixel a pixel, assim que o cooldown permitir (sem gastar seus turnos). Aceita pixels avulsos e/ou retângulos preenchidos. Substitui o desenho anterior, a menos que append=true. Máx 2000 pixels. Pixels que já estão na cor certa são pulados.', parameters: { type: 'object', properties: { pixels: { type: 'array', items: { type: 'object', properties: { x: { type: 'integer' }, y: { type: 'integer' }, color: { type: 'integer' } }, required: ['x', 'y', 'color'] } }, rects: { type: 'array', items: { type: 'object', properties: { x: { type: 'integer' }, y: { type: 'integer' }, w: { type: 'integer' }, h: { type: 'integer' }, color: { type: 'integer' } }, required: ['x', 'y', 'w', 'h', 'color'] } }, append: { type: 'boolean' } } } } },
   { type: 'function', function: { name: 'clear_blueprint', description: 'Cancela o desenho pendente do motor interno.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'create_clan', description: 'Cria um clã (aliança de agentes) e faz de você o fundador. Você só pode estar em um clã por vez.', parameters: { type: 'object', properties: { name: { type: 'string', description: '2-24 caracteres: letras, números, _ ou -' }, description: { type: 'string' } }, required: ['name'] } } },
+  { type: 'function', function: { name: 'invite_to_clan', description: 'Convida um agente para o seu clã. Só o fundador convida; o convidado precisa aceitar.', parameters: { type: 'object', properties: { agent: { type: 'string' } }, required: ['agent'] } } },
+  { type: 'function', function: { name: 'accept_clan_invite', description: 'Aceita um convite pendente e entra no clã (veja clan_invites).', parameters: { type: 'object', properties: { clan: { type: 'string' } }, required: ['clan'] } } },
+  { type: 'function', function: { name: 'leave_clan', description: 'Sai do seu clã. Se você é o fundador, o membro mais antigo assume; se for o último, o clã acaba.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'set_clan_relation', description: 'Só o fundador. Define a relação do seu clã com outro: alliance (vira ativa quando o outro fundador também declarar), war (vale na hora) ou neutral (encerra). É só informação pública, sem efeito mecânico.', parameters: { type: 'object', properties: { clan: { type: 'string' }, kind: { type: 'string', enum: ['alliance', 'war', 'neutral'] } }, required: ['clan', 'kind'] } } },
   { type: 'function', function: { name: 'wait', description: 'Encerra este turno e espera N segundos antes do próximo. Chame quando terminar de agir.', parameters: { type: 'object', properties: { seconds: { type: 'integer' } }, required: ['seconds'] } } },
 ];
 
 const systemPrompt = (a: AgentConfig) => `Você é ${a.name}, um agente jogador autônomo no Pixel IA: um canvas compartilhado e fechado (estilo r/place; o tamanho vem no estado de cada turno) onde agentes de IA colocam pixels e conversam. Humanos só observam.
 Sua identidade: ${a.description}
 Você decide tudo: o que desenhar, onde, com que cores, se coopera ou disputa, e o que diz no chat. Fale em português, com naturalidade, só quando tiver algo a dizer.
+Regras do mundo: o canvas é aberto, qualquer agente pode pintar em qualquer lugar, inclusive por cima do trabalho dos outros; não há territórios nem donos. Você pode agir sozinho ou se unir aos outros. Existem clãs: alianças entre agentes, sem região própria (os membros pintam onde quiserem). Qualquer agente sem clã pode criar um (create_clan) e vira fundador; só o fundador convida (invite_to_clan) e define relações entre clãs (set_clan_relation: alliance, war ou neutral); quem recebe um convite o aceita com accept_clan_invite (veja clan_invites) e qualquer um pode sair com leave_clan. Aliança precisa que os dois fundadores a declarem; guerra vale na hora. Relações são só informação pública que todos veem em clans: o que significam (cooperar, disputar, sabotar, negociar) é decisão sua e dos outros, e o chat é o lugar de combinar. Entrar num clã, ficar solo, trair ou mudar de lado: tudo é permitido.
 Você tem um motor interno de pintura: com set_blueprint você entrega um desenho (pixels e/ou retângulos) e o motor o pinta sozinho, na ordem, respeitando o cooldown, mesmo entre os seus turnos. Prefira isso a colocar pixels um a um; use place_pixel só para ajustes pontuais. Nos turnos você planeja, conversa e corrige o desenho (se alguém pintar por cima, o motor não repinta sozinho: reenvie o que quiser recuperar).
 Você também aprende com o tempo: periodicamente reflete sobre seus resultados (quantos pixels seus sobreviveram, respostas que recebeu) e grava lições sobre desenho, comunicação e personalidade, que voltam a você em your_lessons; leve-as em conta e deixe sua forma de agir evoluir.
 Cada turno você recebe o estado atual: visão geral do mapa inteiro, quem são os outros agentes e o que querem, o chat e seu próprio plano (salve-o com set_plan). Use get_canvas para ver detalhes. Coordene com os outros pelo chat para criar algo coeso: para falar com um agente específico use send_message com "to" (ou escreva @Nome); mensagens endereçadas a você aparecem em messages_to_you e vale responder quando fizer sentido. Use as ferramentas para agir e termine o turno chamando wait.
@@ -146,6 +152,18 @@ export class Agent {
       return { result: { ok: true, queued: this.queue.length } };
     }
     if (name === 'clear_blueprint') { this.queue = []; this.total = 0; this.save(); say('desenho cancelado'); return { result: { ok: true } }; }
+    const clanCalls: Record<string, [string, object]> = {
+      create_clan: ['/clans', { name: args.name, description: args.description ?? '' }],
+      invite_to_clan: ['/clans/invite', { agent: args.agent }],
+      accept_clan_invite: ['/clans/accept', { clan: args.clan }],
+      leave_clan: ['/clans/leave', {}],
+      set_clan_relation: ['/clans/relation', { clan: args.clan, kind: args.kind }],
+    };
+    if (clanCalls[name]) {
+      const r = await this.api(...clanCalls[name]);
+      say(r.success ? `${name}: ${JSON.stringify(args)}` : `${name} recusado (${r.error})`);
+      return { result: r };
+    }
     if (name === 'set_plan') { this.plan = String(args.plan ?? '').slice(0, 500); this.save(); say(`plano: ${this.plan}`); return { result: { ok: true } }; }
     if (name === 'wait') return { result: { ok: true }, wait: Number(args.seconds) };
     return { result: { error: `ferramenta desconhecida: ${name}` } };
@@ -169,6 +187,9 @@ export class Agent {
       canvas: `${s.canvas.width}x${s.canvas.height}`,
       you: s.you,
       painting_engine: this.queue.length ? { pending: this.queue.length, of: this.total, next: this.queue.slice(0, 3) } : 'ocioso (use set_blueprint para entregar um desenho)',
+      your_clan: s.your_clan ? { name: s.your_clan, ...s.clans.find((c: any) => c.name === s.your_clan) } : 'nenhum',
+      clan_invites: s.clan_invites,
+      clans: (s.clans ?? []).map((c: any) => `${c.name} (fundador ${c.founder}; membros: ${c.members.join(', ')})${c.relations.length ? ' ' + c.relations.map((r: any) => `${r.kind === 'war' ? 'GUERRA' : r.status === 'pending' ? (r.proposedByYou ? 'aliança proposta a' : 'aliança proposta por') : 'ALIANÇA'} ${r.with}`).join(', ') : ''}`),
       your_lessons: AREAS.some((k) => this.lessons[k].length) ? this.lessons : '(ainda nenhuma; você refletirá periodicamente e as registrará)',
       your_plan: this.plan || '(nenhum ainda; defina com set_plan)',
       agents: roster.success ? roster.agents.map((a: any) => `${a.name}${a.name === this.cfg.name ? ' (você)' : ''}: ${a.description}`) : s.agents,

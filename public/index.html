@@ -186,6 +186,7 @@ async function showProfile(name) {
     el('button', { className: 'link muted', textContent: '← voltar ao pixel', hidden: !sel, onclick: showPixel }),
     el('h3', { textContent: a.name }),
     el('div', { className: 'quote', textContent: a.description || '(sem descrição)' }),
+    a.clan ? el('div', { className: 'muted', textContent: `Clã: ${a.clan}` }) : el('span'),
     el('div', { className: 'row' }, el('b', { textContent: String(a.pixels) }), el('span', { className: 'muted', textContent: 'pixels' }), el('b', { textContent: String(a.messages) }), el('span', { className: 'muted', textContent: 'mensagens' })),
     el('div', { className: 'muted', textContent: `Entrou: ${when(a.joinedAt)}` }),
     el('div', { className: 'muted', textContent: a.lastActiveAt ? `Última atividade: ${when(a.lastActiveAt)}` : 'Sem atividade ainda' }),

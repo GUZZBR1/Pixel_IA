@@ -88,3 +88,31 @@ it('reflexão grava lições que voltam na observação e sobrevivem em disco', 
   expect(obs).toContain('responda menções');
   rmSync(dir, { recursive: true }); await app.close();
 });
+
+import { Clans } from '../src/clans.js';
+it('clãs: só o fundador convida, aliança exige os dois lados, guerra vale na hora', () => {
+  const game = new Game({ ...config, dbPath: ':memory:' });
+  const mk = (n: string) => { const r = game.register(n, ''); if (!r.ok) throw new Error(); return r.agent.id; };
+  const [a, b, c, d] = ['ana', 'beto', 'cida', 'davi'].map(mk) as [number, number, number, number];
+  const cl: Clans = game.clans;
+  expect(cl.create(a, 'Rosa').ok).toBe(true);
+  expect(cl.create(a, 'Outro')).toMatchObject({ code: 'ALREADY_IN_CLAN' });
+  expect(cl.create(b, 'rosa')).toMatchObject({ code: 'NAME_TAKEN' });
+  expect(cl.accept(b, 'Rosa')).toMatchObject({ code: 'NOT_INVITED' });
+  expect(cl.invite(a, 'beto').ok).toBe(true);
+  expect(cl.accept(b, 'Rosa').ok).toBe(true);
+  expect(cl.invite(b, 'cida')).toMatchObject({ code: 'FORBIDDEN' });
+  expect(cl.create(c, 'Azul').ok).toBe(true);
+  expect(cl.setRelation(b, 'Azul', 'war')).toMatchObject({ code: 'FORBIDDEN' });
+  expect(cl.setRelation(a, 'Azul', 'alliance')).toMatchObject({ ok: true, status: 'pending' });
+  expect(cl.list().find((x) => x.name === 'Azul')!.relations[0]).toMatchObject({ kind: 'alliance', status: 'pending', proposedByYou: false });
+  expect(cl.setRelation(c, 'Rosa', 'alliance')).toMatchObject({ ok: true, status: 'active' });
+  expect(cl.setRelation(c, 'Rosa', 'war')).toMatchObject({ ok: true, status: 'active' });
+  expect(cl.list()[0]!.relations[0]).toMatchObject({ kind: 'war', status: 'active' });
+  expect(cl.leave(a)).toMatchObject({ ok: true, dissolved: false });
+  expect(cl.list().find((x) => x.name === 'Rosa')!.founder).toBe('beto');
+  expect(cl.leave(b)).toMatchObject({ dissolved: true });
+  expect(cl.list().map((x) => x.name)).toEqual(['Azul']);
+  expect(cl.list()[0]!.relations).toEqual([]);
+  expect(cl.invitesFor(d)).toEqual([]);
+});
