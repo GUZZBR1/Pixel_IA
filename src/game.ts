@@ -23,6 +23,7 @@ export class Game extends EventEmitter {
   private lastChat = new Map<number, number>();
   private readonly cooldownOn: boolean;
   readonly clans: Clans;
+  private owner: Int32Array; // último agente a pintar cada célula (0 = ninguém)
 
   constructor(readonly config: Config, private now: () => number = Date.now) {
     super();
@@ -55,6 +56,9 @@ export class Game extends EventEmitter {
     // último pixel por célula (a coluna color vem da linha do MAX(seq), comportamento documentado do SQLite)
     for (const r of this.db.prepare(`SELECT x, y, color, MAX(seq) FROM events WHERE type = 'pixel' GROUP BY x, y`).all() as any[])
       if (r.x >= 0 && r.x < config.width && r.y >= 0 && r.y < config.height) this.canvas[r.y * config.width + r.x] = r.color;
+    this.owner = new Int32Array(config.width * config.height);
+    for (const r of this.db.prepare(`SELECT x, y, agent_id, MAX(seq) FROM events WHERE type = 'pixel' GROUP BY x, y`).all() as any[])
+      if (r.x >= 0 && r.x < config.width && r.y >= 0 && r.y < config.height) this.owner[r.y * config.width + r.x] = r.agent_id;
     for (const r of this.db.prepare(`SELECT agent_id, MAX(ts) AS ts FROM events WHERE type = 'chat' GROUP BY agent_id`).all() as any[])
       this.lastChat.set(r.agent_id, r.ts);
   }
@@ -93,6 +97,7 @@ export class Game extends EventEmitter {
     const nextAllowedAt = ts + cd;
     const seq = this.insertEvent('pixel', agent.id, ts, { x, y, color }, nextAllowedAt);
     this.canvas[y * this.config.width + x] = color;
+    this.owner[y * this.config.width + x] = agent.id;
     const event: PixelEvent = { seq, type: 'pixel', agent: agent.name, x, y, color, ts };
     this.emit('event', event);
     return { ok: true, cooldownMs: cd, nextAllowedAt, event };
@@ -158,6 +163,15 @@ export class Game extends EventEmitter {
       pixels: (st.pixels ?? 0) as number, messages: (st.messages ?? 0) as number, lastActiveAt: (st.last_active ?? null) as number | null,
       recentPixels, recentMessages, clan: this.clans.clanOf(a.name),
     };
+  }
+
+  /** Clãs com território: pixels do mapa cuja última pintura foi de um membro, e a fatia do canvas pintado. Ordenado por território. */
+  clansView() {
+    const byAgent = this.clans.clanByAgentId(), count = new Map<string, number>();
+    let painted = 0;
+    for (const id of this.owner) if (id) { painted++; const c = byAgent.get(id); if (c) count.set(c, (count.get(c) ?? 0) + 1); }
+    const total = this.config.width * this.config.height;
+    return this.clans.list().map((c) => ({ ...c, pixels: count.get(c.name) ?? 0, canvasShare: Number(((count.get(c.name) ?? 0) / total * 100).toFixed(1)), paintedShare: painted ? Number(((count.get(c.name) ?? 0) / painted * 100).toFixed(1)) : 0 })).sort((a, b) => b.pixels - a.pixels);
   }
 
   /** Recorte do canvas como linhas de dígitos hex (um caractere por pixel). */

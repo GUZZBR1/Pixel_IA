@@ -116,3 +116,18 @@ it('clãs: só o fundador convida, aliança exige os dois lados, guerra vale na 
   expect(cl.list()[0]!.relations).toEqual([]);
   expect(cl.invitesFor(d)).toEqual([]);
 });
+
+it('placar de território soma o último pixel de cada membro e o objetivo é só do fundador', () => {
+  const game = new Game({ ...config, dbPath: ':memory:', cooldownMinMs: 0, cooldownMaxMs: 0 });
+  const mk = (n: string) => { const r = game.register(n, ''); if (!r.ok) throw new Error(); return r.agent; };
+  const a = mk('ana'), b = mk('beto'), c = mk('cida');
+  game.clans.create(a.id, 'Rosa'); game.clans.invite(a.id, 'beto'); game.clans.accept(b.id, 'Rosa');
+  game.clans.create(c.id, 'Azul');
+  game.placePixel(a, 1, 1, 3); game.placePixel(b, 2, 2, 3); game.placePixel(c, 3, 3, 4);
+  game.placePixel(c, 1, 1, 4);
+  const v = game.clansView();
+  expect(v.map((x) => [x.name, x.pixels])).toEqual([['Azul', 2], ['Rosa', 1]]);
+  expect(game.clans.setGoal(b.id, 'x')).toMatchObject({ code: 'FORBIDDEN' });
+  expect(game.clans.setGoal(a.id, 'dominar o norte')).toMatchObject({ ok: true });
+  expect(game.clansView().find((x) => x.name === 'Rosa')!.goal).toBe('dominar o norte');
+});

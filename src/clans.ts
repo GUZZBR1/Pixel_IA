@@ -29,6 +29,10 @@ export class Clans {
         ts INTEGER NOT NULL,
         PRIMARY KEY (clan_id, agent_id)
       );
+      CREATE TABLE IF NOT EXISTS clan_goals (
+        clan_id INTEGER PRIMARY KEY REFERENCES clans(id),
+        goal TEXT NOT NULL, ts INTEGER NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS clan_relations (
         a_id INTEGER NOT NULL, b_id INTEGER NOT NULL,
         kind TEXT NOT NULL, status TEXT NOT NULL, proposer_id INTEGER NOT NULL, ts INTEGER NOT NULL,
@@ -100,6 +104,22 @@ export class Clans {
     return { ok: true, clan: mine.name, dissolved: true };
   }
 
+  /** Só o fundador: meta/missão do clã, visível a todos. */
+  setGoal(agentId: number, goal: string): Ok<{ clan: string; goal: string }> | Fail {
+    const mine = this.clanOfId(agentId);
+    if (!mine) return fail('NOT_IN_CLAN', 'Você não está em um clã.');
+    if (mine.founder_id !== agentId) return fail('FORBIDDEN', 'Só o fundador define o objetivo do clã.');
+    goal = goal.trim().slice(0, 300);
+    if (!goal) this.db.prepare('DELETE FROM clan_goals WHERE clan_id = ?').run(mine.id);
+    else this.db.prepare('INSERT OR REPLACE INTO clan_goals (clan_id, goal, ts) VALUES (?, ?, ?)').run(mine.id, goal, this.now());
+    return { ok: true, clan: mine.name, goal };
+  }
+
+  /** agent_id -> nome do clã, para somar território. */
+  clanByAgentId(): Map<number, string> {
+    return new Map((this.db.prepare('SELECT m.agent_id, c.name FROM clan_members m JOIN clans c ON c.id = m.clan_id').all() as any[]).map((r) => [r.agent_id, r.name]));
+  }
+
   /** Só o fundador. alliance exige que o outro clã também declare; war e neutral valem na hora. */
   setRelation(agentId: number, otherName: string, kind: Relation): Ok<{ clan: string; with: string; kind: Relation; status: string }> | Fail {
     const mine = this.clanOfId(agentId);
@@ -124,9 +144,11 @@ export class Clans {
     const clans = this.db.prepare('SELECT c.id, c.name, c.description, f.name AS founder, c.created_at FROM clans c JOIN agents f ON f.id = c.founder_id ORDER BY c.id').all() as any[];
     const members = this.db.prepare('SELECT m.clan_id, a.name FROM clan_members m JOIN agents a ON a.id = m.agent_id ORDER BY m.joined_at, a.id').all() as any[];
     const rels = this.db.prepare('SELECT * FROM clan_relations').all() as any[];
+    const goals = new Map((this.db.prepare('SELECT clan_id, goal FROM clan_goals').all() as any[]).map((g) => [g.clan_id, g.goal as string]));
     const nameOf = new Map(clans.map((c) => [c.id, c.name as string]));
     return clans.map((c) => ({
       name: c.name as string, description: c.description as string, founder: c.founder as string, createdAt: c.created_at as number,
+      goal: goals.get(c.id) ?? null,
       members: members.filter((m) => m.clan_id === c.id).map((m) => m.name as string),
       relations: rels.filter((r) => r.a_id === c.id || r.b_id === c.id).map((r) => {
         const other = nameOf.get(r.a_id === c.id ? r.b_id : r.a_id)!;
